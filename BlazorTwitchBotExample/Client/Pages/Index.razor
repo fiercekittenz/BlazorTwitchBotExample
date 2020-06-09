@@ -1,0 +1,153 @@
+﻿<!-- Blazor Twitch Bot Example by twitch.tv/fiercekittenz -->
+@page "/"
+@using Microsoft.AspNetCore.SignalR.Client
+@inject NavigationManager NavigationManager
+@inject HttpClient Http
+
+<div class="container-fluid">
+   <div class="row p-2">
+      <div class="container-fluid" style="min-width: 500px">
+         <div class="form-group">
+            <label for="uiBotName">Bot Name:</label>
+            <small for="uiBotName" class="form-text text-black-50">The name of your bot account (you can test with your own account if you want).</small>
+            <input type="text" id="uiBotName" @bind="@_botName" width="300" />
+         </div>
+         <div class="form-group">
+            <label for="uiBotAccessToken">Bot Access Token:</label>
+            <small for="uiBotAccessToken" class="form-text text-black-50">You can use Swifty's site to generate a token here: <a href="https://twitchtokengenerator.com/" target="_blank">https://twitchtokengenerator.com/</a></small>
+            <input type="password" id="uiBotAccessToken" @bind="@_botAccessToken" width="300" />
+         </div>
+         <div class="form-group">
+            <label for="uiChannelName">Channel Name:</label>
+            <small for="uiChannelName" class="form-text text-black-50">The name of the channel it should join. You do not need to be live for this to work.</small>
+            <input type="text" id="uiChannelName" @bind="@_channelName" width="300" />
+         </div>
+         <div class="p-2">
+            <center>
+               <button type="button" @onclick="@HandleConnectionRequest">Connect</button>
+            </center>
+         </div>
+      </div>
+   </div>
+   <div class="row p-2 overflow-auto" style="max-height: 500px; border: inset; border-color: #262626; font-size: 12px">
+
+      <!-- Iterate over each of the chat messages and print them out line by line -->
+      <ul>
+         @foreach (string message in _chatMessages)
+         {
+            <li>
+               <samp class="text-black">@message</samp>
+            </li>
+         }
+      </ul>
+
+   </div>
+</div>
+
+@code
+{
+   /// <summary>
+   /// Override the OnInitializedAsync method so that you can setup the hub connection.
+   /// </summary>
+   /// <returns></returns>
+   protected override async Task OnInitializedAsync()
+   {
+      // First build the connection to the hub. Then you will follow up with creating
+      // event handlers for detecting a closed connection and specific messages you
+      // may expect to receive on this particular page.
+      _hubConnection = new HubConnectionBuilder()
+         .WithUrl(NavigationManager.ToAbsoluteUri("/twitchbothub"))
+         .Build();
+
+      // Detect a disconnection and immediately reconnect. This will fix if a user
+      // has a PC that went to sleep or if someone stopped/restarted the bot and OBS
+      // didn't pick up the change.
+      _hubConnection.Closed += async (e) =>
+      {
+         Console.WriteLine("Disconnected from the Twitch Bot hub!");
+         await ConnectToHub();
+      };
+
+      // This is a SignalR hub handler. When the front-end receives a message
+      // called "ChatMessage", it will be handled in this lambda method.
+      _hubConnection.On<string>("ChatMessage", (logMessage) =>
+      {
+         _chatMessages.Add(logMessage);
+
+         if (_chatMessages.Count > kMaxChatLines)
+         {
+            _chatMessages.RemoveAt(0);
+         }
+
+         StateHasChanged();
+      });
+
+      // Start the connection with the hub.
+      await ConnectToHub();
+   }
+
+   /// <summary>
+   /// Attempts to connect to the signalr hub on the back-end. Checks first to see if the
+   /// connection is alive before attempting to make that handshake by calling StartAsync().
+   /// </summary>
+   private async Task ConnectToHub()
+   {
+      while (!IsConnected)
+      {
+         try
+         {
+            // Ping the server with a simple HttpRequest to see if there is a connection.
+            // You need to do this, because if your user has a browsersource in their
+            // broadcaster software, it will lose connectivity and be unable to reconnect
+            // without manually refreshing the cache on the scene object.
+            HttpResponseMessage results = await Http.GetAsync("http://localhost:5002/ping/pong");
+            if (results.StatusCode == System.Net.HttpStatusCode.OK)
+            {
+               // A connection is available, so connect with signalr now.
+               await _hubConnection.StartAsync();
+            }
+         }
+         catch (Exception /*ex*/)
+         {
+            Console.WriteLine("Server is still down. Reconnection attempt in 1 second.");
+         }
+
+         // Only make this check once a second.
+         await Task.Delay(1000);
+      }
+
+      Console.WriteLine("Connection established!");
+   }
+
+   /// <summary>
+   /// Method that handles the connection button. Will take information from the bound
+   /// fields and pass it to the hub by calling its ConnectToTwitch method.
+   /// </summary>
+   private async Task HandleConnectionRequest()
+   {
+      await _hubConnection.InvokeAsync("ConnectToTwitch", _botName, _botAccessToken, _channelName);
+   }
+
+   /// <summary>
+   /// Property to access the connected state of our signalr hub connection.
+   /// </summary>
+   public bool IsConnected => _hubConnection.State == HubConnectionState.Connected;
+
+   #region Private Members
+
+   // Hub Connection Instance: Represents the connection to the back-end of the signalr service.
+   private HubConnection _hubConnection;
+
+   // List of chat messages received from the back-end.
+   private List<string> _chatMessages = new List<string>();
+
+   // Local variables used for two-way binding on the HTML field elements.
+   private string _botName = String.Empty;
+   private string _botAccessToken = String.Empty;
+   private string _channelName = String.Empty;
+
+   // Maximum number of chat lines that we will keep in front-end memory.
+   private static readonly int kMaxChatLines = 100;
+
+   #endregion
+}
