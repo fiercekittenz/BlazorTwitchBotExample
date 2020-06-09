@@ -1,9 +1,11 @@
 // Blazor Twitch Bot Example by twitch.tv/fiercekittenz
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.Net;
 
 namespace BlazorTwitchBotExample.Server
 {
@@ -53,15 +55,25 @@ namespace BlazorTwitchBotExample.Server
 
          app.UseRouting();
 
-         app.UseEndpoints(endpoints =>
-         {
-            endpoints.MapRazorPages();
-            endpoints.MapControllers();
-            endpoints.MapFallbackToFile("index.html");
+         /// Responsible for handling small requests to test connectivity between
+         /// the front-end and back-end services. Responds simply with a 200OK
+         /// to indicate that the connection is alive.
+         app.Map(PathString.FromUriComponent("/ping/pong"),
+             config => config.Run(async context =>
+             {
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                await context.Response.WriteAsync("PONG");
+             })
+         );
 
-            // To add a hub endpoint, you need to use the "MapHub" method as seen below:
-            endpoints.MapHub<TwitchBotHub>("/twitchbothub");
-         });
+         app.UseEndpoints(endpoints =>
+              {
+                 endpoints.MapRazorPages();
+                 endpoints.MapFallbackToFile("index.html");
+
+                    // To add a hub endpoint, you need to use the "MapHub" method as seen below:
+                    endpoints.MapHub<TwitchBotHub>("/twitchbothub");
+              });
       }
    }
 }
