@@ -57,6 +57,7 @@
       // may expect to receive on this particular page.
       _hubConnection = new HubConnectionBuilder()
          .WithUrl(NavigationManager.ToAbsoluteUri("/twitchbothub"))
+         .WithAutomaticReconnect()
          .Build();
 
       // Detect a disconnection and immediately reconnect. This will fix if a user
@@ -66,6 +67,16 @@
       {
          Console.WriteLine("Disconnected from the Twitch Bot hub!");
          await ConnectToHub();
+      };
+
+      // handle reconnection events BECAUSE THEY ARE LOVELY
+      _hubConnection.Reconnecting += async(e) => 
+      {
+         Console.WriteLine("Reconnecting now.... tell the user to wait a moment...");
+      };
+      _hubConnection.Reconnected += async(e) => 
+      {
+         Console.WriteLine("Reconnected now, tell the user all is right in the world");
       };
 
       // This is a SignalR hub handler. When the front-end receives a message
@@ -92,30 +103,9 @@
    /// </summary>
    private async Task ConnectToHub()
    {
-      while (!IsConnected)
-      {
-         try
-         {
-            // Ping the server with a simple HttpRequest to see if there is a connection.
-            // You need to do this, because if your user has a browsersource in their
-            // broadcaster software, it will lose connectivity and be unable to reconnect
-            // without manually refreshing the cache on the scene object.
-            HttpResponseMessage results = await Http.GetAsync("http://localhost:5002/ping/pong");
-            if (results.StatusCode == System.Net.HttpStatusCode.OK)
-            {
-               // A connection is available, so connect with signalr now.
-               await _hubConnection.StartAsync();
-            }
-         }
-         catch (Exception /*ex*/)
-         {
-            Console.WriteLine("Server is still down. Reconnection attempt in 1 second.");
-         }
-
-         // Only make this check once a second.
-         await Task.Delay(1000);
-      }
-
+      // A connection is available, so connect with signalr now.
+      await _hubConnection.StartAsync();
+      
       Console.WriteLine("Connection established!");
    }
 
